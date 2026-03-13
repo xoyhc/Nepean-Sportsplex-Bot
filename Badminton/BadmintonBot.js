@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BadmintonBot Production 3.0.0
+// @name         BadmintonBot Production 3.0.2
 // @namespace    http://tampermonkey.net/
-// @version      3.0.1
+// @version      3.0.2
 // @description  Persistent booking automation with updated DYNAMIC mail polling
 // @author       xxx
 // @match        https://reservation-cf.frontdeskqms.ca/*
