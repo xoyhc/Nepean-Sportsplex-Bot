@@ -18,7 +18,7 @@
   "use strict";
 
   // -----------------------
-  // PAGE MAP
+  // PAGE MAP - Specifies pathname of each page in booking process. Used to determine which method to call.
   // -----------------------
   const pages = {
     "con_main()": "/rcfs/nepeansportsplex/Home/Index",
@@ -30,50 +30,56 @@
   };
 
   // -----------------------
-  // CONFIG (only edit if you know what youre doing!)
+  // CONFIG (ONLY EDIT IF YOU KNOW WHATS GOING ON!)
   // -----------------------
 
-    /** UI zoom factor for the injected panel. */
-  const UI_SCALE = 0.8;
+  const UI_SCALE = 0.8; // UI SCALE (UI Draggable math adjusted to scale of 0.8)
 
   const BOT_CONFIG = {
-    defaultMode: "RUN_NOW",
-    targetWeekday: 4, //thursday
-    targetTime: { h: 17, m: 59, s: 59 },
+    defaultMode: "RUN_NOW",               // Specifies mode the program will default to if none saved in storage. Options: RUN_NOW, SCHEDULE_RUN
+    targetWeekday: 4,                     // Specifies target day of week the bot begins booking in SCHEDULE_RUN mode. 1 = monday, 2 = tuesday etc.
+    targetTime: { h: 17, m: 59, s: 59 },  // Specifies target time for SCHEDULE_RUN
 
-    origin: "https://reservation-cf.frontdeskqms.ca",
-    mainEntryUrl: "https://reservation.frontdesksuite.ca/rcfs/nepeansportsplex",
-    mainPath: "/rcfs/nepeansportsplex/Home/Index",
+    origin: "https://reservation-cf.frontdeskqms.ca", // Used in autoResumeIfRunning() as a domain safety check.
+    mainEntryUrl: "https://reservation.frontdesksuite.ca/rcfs/nepeansportsplex", // Used in goToMainEntry()
+    mainPath: "/rcfs/nepeansportsplex/Home/Index", // Used in isMainPageLoaded()
 
-    tickMs: 250,
-    stepTimeoutMs: 330000,
-    stepMaxRetries: 8,
-    logMax: 250,
+    tickMs: 250,           // How often (ms) the step execution loop ticks. Lower = faster reaction, higher = less CPU.
+    stepTimeoutMs: 330000, // Max time (ms) a single step is allowed to run before the bot force-stops with a timeout error.
+    stepMaxRetries: 8,     // Max consecutive failures allowed per step before the bot gives up and stops.
+    logMax: 250,           // Max number of log lines kept in memory and storage before oldest entries are dropped.
 
-    sportName: "Badminton",
-    day: "Saturday",
-    timeSlot: "7:30 p.m.",
+    sportName: "Badminton", // Display name of the sport to select on the Home page. Must match the button text exactly.
+    day: "Saturday",        // Day to select
+    timeSlot: "7:30 p.m.",  // Timeslot to select
 
-    phone: "6132929977",
-    email: "maryottawa@virgilian.com",
-    name: "Echo Macleod",
-
-    // mail.tm
-    mailAddress: "maryottawa@virgilian.com",
-    mailPassword: "z80VLsh(",
+    phone: "6132929977",               // Booking phone number
+    email: "maryottawa@virgilian.com", // Booking email (Mail.tm)
+    name: "Echo Macleod",              // Booking Name
 
 
-    mailPollIntervalMs: 143, // ~7 req/s
-    mailMaxWaitMs: 10000,
+    mailPassword: "z80VLsh(", // Mail.tm Password for API
 
-    // ── CONFIG SETTING ──────────────────────────────────────────────────────────
-    // schedulePrewarmEnabled: When true, the bot navigates a few steps early
-    // (T-8s) to gain a small head start before the scheduled time fires.
-    // Keep this FALSE unless you explicitly want the pre-navigation behaviour.
+
+    mailPollIntervalMs: 143, // Specifies Polling interval for verification code retrieval. Borderline Mail.tm's ratelimit of ~7 req/s.
+    mailMaxWaitMs: 10000,    // Max time (in ms) the bot will wait for the verification email to arrive in the mail.tm inbox. Fail is exceeded.
+
+    // ── PREWARM SETTING ──────────────────────────────────────────────────────────
+    // schedulePrewarmEnabled: When true, the bot navigates to con_timeselect() early
+    // (8 seconds before target time) to gain a small head start before the scheduled time fires.
     // ─────────────────────────────────────────────────────────────────────────
-    schedulePrewarmEnabled: false
+    schedulePrewarmEnabled: false,
+
+    // ── GROUP SIZE SETTING ──────────────────────────────────────────────────────────
+    // desiredSlotCount: Number of court slots to book.
+    // This value is used both by con_group() (when SlotCountSelection loads
+    // naturally) and by the fallback POST that fires from con_contact() when
+    // SlotCountSelection was skipped due to the pre-6PM race condition.
+    // ─────────────────────────────────────────────────────────────────────────
+    desiredSlotCount: 2
   };
 
+  // These are storage keys used for persistence across page refreshes.
   const STORAGE_KEYS = {
     running: "fdq_bot_running",
     mode: "fdq_bot_mode",
@@ -85,22 +91,17 @@
     successMessage: "fdq_success_message",
     uiLeft: "nb_uiLeft",
     uiTop: "nb_uiTop",
-
     sportName: "fdq_cfg_sportName",
     day: "fdq_cfg_day",
     timeSlot: "fdq_cfg_timeSlot",
-
     timeselectWaitStartMs: "fdq_timeselect_wait_start_ms",
     timeselectAttempts: "fdq_timeselect_attempts",
-
-    // mail keys
     mailToken: "mailtm_token",
     mailboxInitReady: "fdq_mailbox_init_ready",
-
     targetWeekday: "fdq_cfg_targetWeekday",
     targetTime: "fdq_cfg_targetTime",
   };
-
+  // Bot state for persistence during booking process
   const BOT_STATE = {
     running: false,
     mode: BOT_CONFIG.defaultMode,
@@ -122,7 +123,7 @@
     schedulePrewarmed: false
 
   };
-
+  // UI Persistence
   const BOT_UI = {
   root: null,
   status: null,
@@ -149,7 +150,8 @@
   // ==============================
   // PERSISTENCE LAYER
   // ==============================
-  /**
+
+   /**
    * Reads a persisted value by key and returns a fallback when unavailable.
    */
   function sGet(key, fallback) {
@@ -162,9 +164,7 @@
   }
 
   /**
-
    * Persists a value by key using Tampermonkey storage.
-
    */
 
   function sSet(key, value) {
@@ -172,9 +172,7 @@
   }
 
   /**
-
    * Deletes a persisted value by key from Tampermonkey storage.
-
    */
 
   function sDel(key) {
@@ -182,9 +180,7 @@
   }
 
   /**
-
    * Persists current bot runtime/config state used for reload recovery.
-
    */
 
   function saveState() {
@@ -205,16 +201,14 @@
   }
 
 /**
-
  * Loads persisted bot runtime/config state and normalizes legacy values.
-
  */
 
 function loadState() {
   BOT_STATE.running = !!sGet(STORAGE_KEYS.running, false);
 
   let loadedMode = sGet(STORAGE_KEYS.mode, BOT_CONFIG.defaultMode);
-  // normalize legacy values
+  // normalize legacy values - should refactor later.
   if (loadedMode === "LIVE") loadedMode = "SCHEDULE_RUN";
   if (loadedMode === "TEST") loadedMode = "RUN_NOW";
   if (loadedMode !== "RUN_NOW" && loadedMode !== "SCHEDULE_RUN") loadedMode = "RUN_NOW";
@@ -231,24 +225,26 @@ function loadState() {
   BOT_CONFIG.day = sGet(STORAGE_KEYS.day, BOT_CONFIG.day);
   BOT_CONFIG.timeSlot = sGet(STORAGE_KEYS.timeSlot, BOT_CONFIG.timeSlot);
   const tw = Number(sGet(STORAGE_KEYS.targetWeekday, BOT_CONFIG.targetWeekday));
-BOT_CONFIG.targetWeekday = Number.isInteger(tw) && tw >= 0 && tw <= 6 ? tw : 4;
+  BOT_CONFIG.targetWeekday = Number.isInteger(tw) && tw >= 0 && tw <= 6 ? tw : 4;
 
-const tt = sGet(STORAGE_KEYS.targetTime, BOT_CONFIG.targetTime);
-const th = Number(tt?.h), tm = Number(tt?.m), ts = Number(tt?.s);
+  const tt = sGet(STORAGE_KEYS.targetTime, BOT_CONFIG.targetTime);
+  const th = Number(tt?.h), tm = Number(tt?.m), ts = Number(tt?.s);
+
 BOT_CONFIG.targetTime = {
   h: Number.isInteger(th) && th >= 0 && th <= 23 ? th : 18,
   m: Number.isInteger(tm) && tm >= 0 && tm <= 59 ? tm : 0,
   s: Number.isInteger(ts) && ts >= 0 && ts <= 59 ? ts : 0
 };
-
 }
 
   // ==============================
   // SHARED UTILITIES
   // ==============================
-  /**
+
+   /**
    * Writes a timestamped log line to memory, storage, and browser console.
    */
+
   function logLine(msg, ok = null) {
     const t = new Date().toLocaleTimeString();
     const prefix = ok === true ? "✅" : ok === false ? "❌" : "•";
@@ -260,28 +256,26 @@ BOT_CONFIG.targetTime = {
   }
 
   /**
-
    * Returns a promise that resolves after the provided delay in milliseconds.
-
    */
 
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
   }
+
 /**
  * Applies configured zoom scaling to the injected bot panel.
  */
-function applyUIScale(scale = 1) {
-  if (!BOT_UI.root) return;
-  BOT_UI.root.style.transform = "";
-  BOT_UI.root.style.transformOrigin = "";
-  BOT_UI.root.style.zoom = String(scale);
-}
+
+    function applyUIScale(scale = 1) {
+        if (!BOT_UI.root) return;
+        BOT_UI.root.style.transform = "";
+        BOT_UI.root.style.transformOrigin = "";
+        BOT_UI.root.style.zoom = String(scale);
+    }
 
   /**
-
    * Formats millisecond duration into human-readable h/m/s text.
-
    */
 
   function formatDuration(ms) {
@@ -297,9 +291,7 @@ function applyUIScale(scale = 1) {
   }
 
   /**
-
    * Escapes HTML special characters for safe UI string interpolation.
-
    */
 
   function escapeHtml(s) {
@@ -312,9 +304,7 @@ function applyUIScale(scale = 1) {
   }
 
   /**
-
    * Validates a time string in expected 12-hour format (e.g., 7:30 p.m.).
-
    */
 
   function validate12hTime(input) {
@@ -322,9 +312,7 @@ function applyUIScale(scale = 1) {
   }
 
   /**
-
    * Parses a 12-hour time string into hour/minute/period parts.
-
    */
 
   function parseTimeSlot(input) {
@@ -334,9 +322,7 @@ function applyUIScale(scale = 1) {
 }
 
 /**
-
  * Builds a normalized 12-hour time string from UI inputs.
-
  */
 
 function buildTimeSlotFromInputs() {
@@ -352,9 +338,7 @@ function buildTimeSlotFromInputs() {
 }
 
   /**
-
    * Updates action button state, style, and disabled behavior.
-
    */
 
   function updateActionButton(state = "start") {
@@ -397,9 +381,7 @@ function buildTimeSlotFromInputs() {
   }
 
   /**
-
    * Updates status banner text and color based on status type.
-
    */
 
   function setStatus(text, type = "default") {
@@ -416,9 +398,7 @@ function buildTimeSlotFromInputs() {
   }
 
   /**
-
    * Marks a process step as complete/incomplete in state and UI.
-
    */
 
   function markStep(name, ok) {
@@ -428,17 +408,13 @@ function buildTimeSlotFromInputs() {
   }
 
   /**
-
    * Renders completion state for all process step indicators.
-
    */
 
   function renderAllSteps() { _updateProgressBar(); }
 
   /**
-
    * Clears visual completion indicators for all process steps.
-
    */
 
   function resetVisualProcessSteps() {
@@ -472,9 +448,7 @@ function buildTimeSlotFromInputs() {
   }
 
   /**
-
    * Resets stored and visual step progress for a new run.
-
    */
 
   function clearProcessProgress() {
@@ -486,9 +460,7 @@ function buildTimeSlotFromInputs() {
   }
 
   /**
-
    * Checks whether the main reservation landing page is fully loaded.
-
    */
 
   function isMainPageLoaded() {
@@ -498,9 +470,7 @@ function buildTimeSlotFromInputs() {
   }
 
   /**
-
    * Navigates browser to configured reservation entry URL.
-
    */
 
   function goToMainEntry() {
@@ -510,9 +480,7 @@ function buildTimeSlotFromInputs() {
   }
 
   /**
-
    * Maps current pathname to the corresponding step function key.
-
    */
 
   function getCurrentStepName() {
@@ -524,9 +492,7 @@ function buildTimeSlotFromInputs() {
   }
 
   /**
-
    * Resolves a step key to its global function reference.
-
    */
 
   function getFnFromStep(stepName) {
@@ -630,7 +596,8 @@ function refreshModeUI() {
   // ==============================
   // NETWORK HELPERS \(GM_xmlhttpRequest\)
   // ==============================
-  /**
+
+   /**
    * Performs a GM_xmlhttpRequest and resolves with raw response object.
    */
   function gmRequest({ method = "GET", url, headers = {}, data = null, timeout = 15000 }) {
@@ -700,7 +667,7 @@ function refreshModeUI() {
         method: "POST",
         url: "https://api.mail.tm/token",
         bodyObj: {
-          address: BOT_CONFIG.mailAddress,
+          address: BOT_CONFIG.email,
           password: BOT_CONFIG.mailPassword
         }
       });
@@ -764,7 +731,7 @@ function refreshModeUI() {
         method: "POST",
         url: "https://api.mail.tm/token",
         bodyObj: {
-          address: BOT_CONFIG.mailAddress,
+          address: BOT_CONFIG.email,
           password: BOT_CONFIG.mailPassword
         }
       });
@@ -1095,7 +1062,7 @@ function refreshModeUI() {
     try {
       const count = document.querySelector("#reservationCount");
       if (count) {
-        count.value = 2;
+        count.value = BOT_CONFIG.desiredSlotCount;
         // keep it fast: minimal events to satisfy most frameworks
         count.dispatchEvent(new Event("input", { bubbles: true }));
         count.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1107,6 +1074,36 @@ function refreshModeUI() {
       btn.click();
       return true;
     } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Fallback: manually POSTs the SlotCountSelection form when that page was
+   * skipped because slots weren't open yet at bot-start time (pre-6PM race).
+   * Called fire-and-forget from con_contact() so it runs in parallel with
+   * field-filling and Turnstile waiting — zero added latency.
+   */
+  async function submitSlotCountFallback() {
+    try {
+      const q = s => document.querySelector(s)?.value || "";
+      const form = new FormData();
+      form.append("sessionid",                   q("#sessionid"));
+      form.append("pageid",                      q("#pageid"));
+      form.append("buttonid",                    q("#buttonid"));
+      form.append("culture",                     "en");
+      form.append("uiCulture",                   "en");
+      form.append("ReservationCount",            String(BOT_CONFIG.desiredSlotCount));
+      form.append("__RequestVerificationToken",  q('input[name="__RequestVerificationToken"]'));
+
+      const res = await fetch(
+        "https://reservation-cf.frontdeskqms.ca/rcfs/nepeansportsplex/ReserveTime/SubmitSlotCount?culture=en",
+        { method: "POST", body: form, credentials: "include" }
+      );
+      logLine(`SlotCount fallback → HTTP ${res.status}`, res.ok);
+      return res.ok;
+    } catch (e) {
+      logLine(`SlotCount fallback error: ${e?.message || "unknown"}`, false);
       return false;
     }
   }
@@ -1319,6 +1316,17 @@ function refreshModeUI() {
       }
 
       if (!(phoneField && emailField && nameField && submitBtn)) return false;
+
+      // ── Slot-count fallback ──────────────────────────────────────────────────
+      // If SlotCountSelection was skipped (bot started before 6 PM and the page
+      // never appeared), send the SubmitSlotCount request now, fire-and-forget.
+      // It runs concurrently with field-filling + Turnstile wait, so there is no
+      // added delay to the booking flow.
+      // ─────────────────────────────────────────────────────────────────────────
+      if (BOT_STATE.stepDone["con_group()"] !== true) {
+        logLine("SlotCountSelection was skipped – sending slot count fallback");
+        submitSlotCountFallback(); // intentionally not awaited
+      }
 
       setStatus(`Filling name: ${name}`);
       nameField.value = String(name);
