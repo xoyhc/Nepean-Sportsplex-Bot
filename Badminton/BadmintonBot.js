@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      3.0.1
 // @description  Persistent booking automation with updated DYNAMIC mail polling
-// @author       Samuel Blauer
+// @author       xxx
 // @match        https://reservation-cf.frontdeskqms.ca/*
 // @match        https://reservation.frontdesksuite.ca/*
 // @run-at       document-idle
@@ -53,12 +53,12 @@
     day: "Saturday",        // Day to select
     timeSlot: "7:30 p.m.",  // Timeslot to select
 
-    phone: "6132929977",               // Booking phone number
+    phone: "000",               // Booking phone number
     email: "maryottawa@virgilian.com", // Booking email (Mail.tm)
-    name: "Echo Macleod",              // Booking Name
+    name: "john",              // Booking Name
 
 
-    mailPassword: "z80VLsh(", // Mail.tm Password for API
+    mailPassword: "password", // Mail.tm Password for API
 
 
     mailPollIntervalMs: 143, // Specifies Polling interval for verification code retrieval. Borderline Mail.tm's ratelimit of ~7 req/s.
